@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en" data-theme-scope="public">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sign In — Barangay Compliance System</title>
+<script src="js/recovery-route.js?v=20261003-recovery"></script>
+<link rel="stylesheet" href="css/styles.css?v=20261006-connected-fixes" />
+<script src="js/theme.js?v=20261003-internal-theme"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8/dist/umd/supabase.js"></script>
+<script src="js/password-toggle.js?v=20261005" defer></script></head>
+<body>
+<div class="auth-page">
+  <div class="auth-visual">
+    <div class="brand-header">
+      <img src="assets/images/DILG-Logo-new.png" alt="DILG Seal" class="auth-dilg-logo-left" />
+      <div class="eyebrow">Department of the<br>Interior and Local<br>Government</div>
+    </div>
+    <h1>Lucena City<br>Barangay<br>Compliance<br>System</h1>
+    <p>A centralized platform that helps barangays manage compliance requirements, submit supporting documents, track deadlines, and maintain an accountable record of compliance.</p>
+  </div>
+  <div class="auth-form-wrap">
+    <form class="auth-form card" id="login-form">
+      <h2>Sign in</h2>
+      <p style="color:var(--color-ink-600);font-size:13.5px;margin-top:-8px;">Sign in to your approved account. New Barangay Secretaries can apply for access below.</p>
+
+      <div class="field">
+        <label for="email">Email</label>
+        <input type="email" id="email" required autocomplete="username" />
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" required autocomplete="current-password" />
+      </div>
+
+      <div id="error-box" style="display:none;color:var(--color-danger);font-size:13px;margin-bottom:14px;"></div>
+
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;" id="submit-btn">Sign in</button>
+      <button type="button" class="btn btn-outline auth-apply-button" id="apply-account-btn">Apply for Account</button>
+
+      <a href="public-leaderboard.html" class="btn btn-public-rankings" style="width:100%;justify-content:center;margin-top:12px;">View Public Rankings</a>
+
+      <div style="text-align:center;margin-top:16px;">
+        <a href="#" id="forgot-link" style="font-size:13px;">Forgot password?</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="env.js"></script>
+<script src="js/supabaseClient.js?v=20261004-analytics-home"></script>
+<script src="js/mfa-config.js?v=20261004-analytics-home"></script><script src="js/mfa-service.js?v=20261003-totp"></script><script src="js/mfa-session.js?v=20261003-totp"></script><script src="js/auth.js?v=20261004-reset-service-fix"></script>
+<script src="js/account-applications.js?v=20261007-secretary-restoration"></script>
+<script>
+document.getElementById("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("submit-btn");
+  const errorBox = document.getElementById("error-box");
+  errorBox.style.display = "none";
+  btn.disabled = true;
+  btn.textContent = "Signing in…";
+
+  try {
+    const email = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value;
+    await login(email, password);
+    document.getElementById("password").value = "";
+    await MfaSession.routeAfterPassword();
+  } catch (err) {
+    errorBox.textContent = err.message || "Sign in failed. Check your credentials.";
+    errorBox.style.display = "block";
+    btn.disabled = false;
+    btn.textContent = "Sign in";
+  }
+});
+
+document.getElementById("forgot-link").addEventListener("click", (e) => {
+  e.preventDefault();
+  if (document.getElementById("forgot-password-dialog")) return;
+  const dialog = document.createElement("dialog");
+  dialog.id = "forgot-password-dialog";
+  dialog.className = "logout-dialog password-reset-dialog";
+  dialog.setAttribute("aria-labelledby", "forgot-password-title");
+  dialog.setAttribute("aria-describedby", "forgot-password-description");
+  dialog.innerHTML = `<button type="button" class="btn btn-outline logout-dialog-close" aria-label="Close password reset">×</button>
+    <div class="logout-dialog-icon" aria-hidden="true"><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="m3 7 9 6 9-6"/></svg></div>
+    <div class="eyebrow">DILG Lucena · Account security</div>
+    <h2 id="forgot-password-title">Forgot your password?</h2>
+    <p id="forgot-password-description">Enter your account email and we’ll send you a secure password reset link.</p>
+    <form><div class="field"><label for="forgot-password-email">Email address</label><input id="forgot-password-email" type="email" autocomplete="email" required maxlength="254" placeholder="you@example.com" autofocus></div>
+    <div class="password-reset-message" role="status" aria-live="polite" hidden></div>
+    <div class="logout-dialog-actions"><button type="button" class="btn btn-outline" data-cancel>Cancel</button><button type="submit" class="btn btn-primary" data-send>Send reset link</button></div></form>`;
+  const opener = document.activeElement;
+  const input = dialog.querySelector("input"), form = dialog.querySelector("form");
+  const message = dialog.querySelector(".password-reset-message"), send = dialog.querySelector("[data-send]");
+  input.value = document.getElementById("email").value.trim();
+  dialog.querySelector(".logout-dialog-close").onclick = () => dialog.close();
+  dialog.querySelector("[data-cancel]").onclick = () => dialog.close();
+  dialog.addEventListener("close", () => { dialog.remove(); if (opener?.isConnected) opener.focus({preventScroll:true}); }, {once:true});
+  dialog.addEventListener("click", event => {
+    if (event.target !== dialog) return;
+    const bounds = dialog.getBoundingClientRect();
+    if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) dialog.close();
+  });
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (send.disabled || !form.reportValidity()) return;
+    send.disabled = true; send.textContent = "Sending…"; input.readOnly = true; message.hidden = true;
+    try {
+      await requestPasswordReset(input.value.trim());
+      if (!dialog.isConnected) return;
+      message.textContent = "If an active account exists for this email, a reset link has been sent. Please check your inbox and spam folder.";
+      message.className = "password-reset-message is-success"; message.hidden = false;
+      send.hidden = true; dialog.querySelector("[data-cancel]").textContent = "Back to sign in";
+    } catch (error) {
+      if (!dialog.isConnected) return;
+      message.textContent = /rate.limit|too many/i.test(error.message || "") ? "The email sending limit has been reached. Please try again later." : error.message || "We couldn’t send the reset link. Please try again.";
+      message.className = "password-reset-message is-error"; message.hidden = false;
+      send.disabled = false; send.textContent = "Send reset link"; input.readOnly = false;
+    }
+  });
+  document.body.appendChild(dialog);
+  dialog.showModal();
+});
+</script>
+</body>
+</html>
+

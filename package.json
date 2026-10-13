@@ -1,0 +1,11 @@
+{
+  "name": "dilg-compliance-security-tests",
+  "private": true,
+  "scripts": {
+    "test:mfa": "node --test tests/mfa.test.cjs tests/mfa-database.test.cjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@supabase/supabase-js": "2.49.8"
+  }
+}

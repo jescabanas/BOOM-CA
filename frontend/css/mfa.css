@@ -1,0 +1,7 @@
+.mfa-wrap{min-height:100vh;display:grid;place-items:center;padding:28px;background:radial-gradient(at 85% 10%,#b1455814,transparent 50%)}
+.mfa-card{width:min(100%,560px);padding:32px}.mfa-card h1{font-size:30px}.mfa-brand{display:flex;align-items:center;gap:18px;padding-bottom:24px;margin-bottom:24px;border-bottom:1px solid var(--color-border)}
+.mfa-brand img{width:56px;height:56px}.mfa-card .btn{margin:8px 6px 0 0}.mfa-card [hidden]{display:none!important}
+#mfa-setup{padding:20px;background:var(--color-surface);border-radius:14px;margin:18px 0;text-align:center}
+#mfa-qr{width:220px;max-width:100%;background:white;padding:12px;border-radius:12px}#mfa-key{display:block;overflow-wrap:anywhere;font-size:16px;user-select:all}
+#mfa-code{font-size:24px;letter-spacing:.3em}#mfa-message:not(:empty){padding:12px;border-radius:10px;border:1px solid var(--color-border);margin:16px 0}
+@media(max-width:600px){.mfa-wrap{padding:16px}.mfa-card{padding:22px}}

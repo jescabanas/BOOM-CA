@@ -1,0 +1,851 @@
+<!doctype html>
+<html lang="en" data-theme-scope="system">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Console — Barangay Compliance System</title>
+    <link rel="stylesheet" href="css/styles.css?v=20261007-account-invitations" />
+    <script src="js/theme.js?v=20261003-internal-theme"></script>
+    <script src="js/period-filter.js?v=20261008-admin-deadlines"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8/dist/umd/supabase.js"></script>
+  <script src="js/password-toggle.js?v=20261005" defer></script></head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <img src="assets/images/DILG-Logo-new.png" alt="DILG Seal" class="brand-seal" />
+          <div class="brand-text">
+            <div class="name">Barangay<br>Compliance<br>System</div>
+          </div>
+        </div>
+        <nav id="sidebar-nav"></nav>
+        <div class="theme-toggle-mount" id="theme-toggle-mount"></div>        <div class="sidebar-footer">
+          <a href="#" onclick="logout()" style="color: inherit">Sign out</a>
+        </div>
+      </aside>
+
+      <main class="main admin-main">
+        <div class="topbar">
+          <div class="page-title">
+            <div class="eyebrow">Super Administrator</div>
+            <h1 style="margin: 0">Admin Console</h1>
+          </div>
+          <div class="user-chip" id="user-chip"></div>
+        </div>
+
+        <div
+          style="
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            border-bottom: 1px solid var(--color-line);
+          "
+        >
+          <button class="tab-btn active" data-tab="users">Users</button>
+          <button class="tab-btn" data-tab="access">Barangay Access</button>
+          <button class="tab-btn" data-tab="applications">Account Applications <span id="application-pending-count" class="pill warning" hidden></span></button>
+          <button class="tab-btn" data-tab="barangays">Barangays</button>
+          <button class="tab-btn" data-tab="mandates">Mandates</button>
+          <button class="tab-btn" data-tab="audit">Audit Log</button>
+        </div>
+
+        <section id="tab-users">
+          <div class="card">
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 12px;
+              "
+            >
+              <h3 style="margin: 0">Users</h3>
+              <button class="btn btn-primary" id="new-user-btn">
+                + New User
+              </button>
+            </div>
+            <div class="users-table-wrap"><table class="data-table users-table"><colgroup><col style="width:20%"><col style="width:19%"><col style="width:14%"><col style="width:11%"><col style="width:9%"><col style="width:27%"></colgroup>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>Barangay</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="users-body"></tbody>
+            </table></div>
+          </div>
+        </section>
+
+        <section id="tab-access" style="display:none">
+          <div class="card">
+            <div class="secretary-access-heading"><div><div class="eyebrow">Secretary handover</div><h3>Barangay Access</h3><p class="dialog-description">Manage which secretary can access each barangay dashboard. Remove accounts in the Users tab; previous files, submissions and review history are preserved.</p></div><button type="button" class="btn btn-primary" id="secretary-assign">Assign replacement</button></div>
+            <div class="application-toolbar"><div class="field"><label for="secretary-access-search">Search accounts</label><input id="secretary-access-search" type="search" placeholder="Barangay, secretary or email" /></div><div class="field"><label for="secretary-access-filter">Access status</label><select id="secretary-access-filter"><option value="all">All accounts</option><option value="active">Accessed</option><option value="inactive">No access</option></select></div><button type="button" class="btn btn-outline" id="secretary-access-refresh">Refresh</button></div>
+            <p class="field-hint">Replacement secretaries use their own approved email account. Review their Account Application first, then assign them here. Existing passwords are never displayed or stored by the admin console.</p>
+            <p id="secretary-access-summary" class="application-count" aria-live="polite"></p>
+            <div class="application-table-wrap"><table class="data-table secretary-access-table"><colgroup><col style="width:16%"><col style="width:20%"><col style="width:24%"><col style="width:12%"><col style="width:28%"></colgroup><thead><tr><th>Barangay</th><th>Secretary</th><th>Email</th><th>Access</th><th>Actions</th></tr></thead><tbody id="secretary-access-body"><tr><td colspan="5">Loading secretary accounts…</td></tr></tbody></table></div>
+          </div>
+        </section>
+
+        <section id="tab-applications" style="display:none">
+          <div class="card">
+            <div class="application-panel-heading"><div><div class="eyebrow">Access requests</div><h3>Account Applications</h3><p class="dialog-description">Verify each applicant and their proof before granting Barangay Secretary access.</p></div></div>
+            <div class="application-toolbar">
+              <div class="field"><label for="application-search">Search applicants</label><input id="application-search" type="search" placeholder="Name, email or barangay" /></div>
+              <div class="field"><label for="application-filter">Application status</label><select id="application-filter"><option value="pending">Awaiting review</option><option value="approved">Approved</option><option value="denied">Denied</option><option value="all">All applications</option></select></div>
+              <button type="button" class="btn btn-outline" id="application-refresh">Refresh</button>
+            </div>
+            <p class="application-count" id="application-list-summary" aria-live="polite"></p>
+            <div class="application-table-wrap"><table class="data-table"><thead><tr><th>Applicant</th><th>Barangay</th><th>Applied</th><th>Status</th><th>Action</th></tr></thead><tbody id="applications-body"><tr><td colspan="5">Loading applications…</td></tr></tbody></table></div>
+          </div>
+        </section>
+
+        <section id="tab-barangays" style="display: none">
+          <div class="card">
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 12px;
+              "
+            >
+              <h3 style="margin: 0">Barangays</h3>
+            </div>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Code</th>
+                  <th>Name</th>
+                  <th>Secretary account</th>
+                  <th>Active</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="barangays-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="tab-mandates" style="display: none">
+          <div class="card">
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 12px;
+              "
+            >
+              <h3 style="margin: 0">Mandates</h3>
+              <button class="btn btn-primary" id="new-mandate-btn">
+                + New Mandate
+              </button>
+            </div>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Title</th>
+                  <th>Category</th>
+                  <th>Max Points</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="mandates-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="tab-audit" style="display: none">
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:12px;">
+              <h3 style="margin: 0">Audit Log</h3>
+              <div class="period-filter-row" id="audit-period-filter" style="margin-bottom:0;"></div>
+            </div>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>User</th>
+                  <th>Action</th>
+                  <th>Entity</th>
+                </tr>
+              </thead>
+              <tbody id="audit-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- Compliance deadline modal -->
+    <div
+      id="compliance-modal"
+      role="dialog" aria-modal="true" aria-labelledby="compliance-modal-title"
+      style="display:none;position:fixed;inset:0;background:rgba(11,31,58,.5);align-items:center;justify-content:center;z-index:100;padding:20px;"
+    >
+      <div class="card" style="width:min(520px,100%);">
+        <div class="dialog-heading"><div><div class="eyebrow">Deadline management</div><h3 id="compliance-modal-title">New Compliance Deadline</h3></div><button type="button" class="btn btn-outline dialog-close" aria-label="Close deadline editor" onclick="document.getElementById('cancel-compliance').click()">×</button></div>
+        <div class="field"><label for="compliance-name">Compliance name</label><input id="compliance-name" value="Barangay Annual Compliance" /></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="field"><label for="compliance-period-label">Period label</label><input id="compliance-period-label" value="Annual" /></div>
+          <div class="field"><label for="compliance-year">Year</label><input id="compliance-year" type="number" min="2000" max="2100" /></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="field"><label for="compliance-date">Date</label><input id="compliance-date" type="date" /><div style="font-size:12px;color:var(--color-ink-400);margin-top:4px;">Example: 09/08/2026</div></div>
+          <div class="field"><label for="compliance-time">Time</label><input id="compliance-time" type="time" /><div style="font-size:12px;color:var(--color-ink-400);margin-top:4px;">Example: 5:00 PM</div></div>
+        </div>
+        <div class="field"><label for="compliance-grace">Grace period (hours)</label><input id="compliance-grace" type="number" min="0" value="48" /></div>
+        <div id="compliance-error" style="display:none;color:var(--color-danger);font-size:13px;margin-bottom:10px;"></div>
+        <div class="dialog-actions"><button class="btn btn-outline" id="cancel-compliance">Cancel</button><button class="btn btn-primary" id="save-compliance">Save Deadline</button></div>
+      </div>
+    </div>
+
+    <!-- New user modal -->
+    <div
+      id="user-modal"
+      role="dialog" aria-modal="true" aria-labelledby="new-user-heading"
+      style="
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(11, 31, 58, 0.5);
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+      "
+    >
+      <div class="card" style="width:min(520px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;box-sizing:border-box;">
+        <div class="dialog-heading"><div><div class="eyebrow">Account management</div><h3 id="new-user-heading">Invite or restore a user</h3><p class="dialog-description">Invite a Super Administrator, or restore a removed account as a Super Administrator using its original email. Barangay Secretaries apply through the sign-in page.</p></div><button type="button" class="btn btn-outline dialog-close" aria-label="Close user invitation" onclick="document.getElementById('cancel-user').click()">×</button></div>
+        <div class="field"><label for="nu-name">Full name</label><input id="nu-name" maxlength="200" required /></div>
+        <div class="field">
+          <label for="nu-email">Email</label><input id="nu-email" type="email" maxlength="254" required />
+        </div>
+        <div class="field">
+          <label for="nu-role">Role</label>
+          <select id="nu-role">
+            <option value="super_admin">Super Administrator</option>          </select>
+        </div>
+        <label class="invitation-restore-option" for="nu-restore"><input id="nu-restore" type="checkbox" /><span>Restore removed or disabled account<span class="field-hint">Restores the selected role while preserving previous files and history. The user must sign in again.</span></span></label>
+        <div
+          id="user-error"
+          style="
+            display: none;
+            color: var(--color-danger);
+            font-size: 13px;
+            margin-bottom: 10px;
+          "
+        ></div>
+        <p
+          style="font-size: 12px; color: var(--color-ink-400); margin-top: 10px"
+        >
+          The recipient receives an official DILG invitation to create their own
+          password. Open the setup email in a separate or private browser to
+          keep your administrator session available.
+        </p>
+        <div class="dialog-actions">
+          <button class="btn btn-outline" id="cancel-user">Cancel</button>
+          <button class="btn btn-primary" id="confirm-user">Send invitation</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="env.js"></script>
+    <script src="js/supabaseClient.js?v=20260806-authfix"></script>
+    <script src="js/mfa-config.js?v=20261003-totp"></script><script src="js/mfa-service.js?v=20261003-totp"></script><script src="js/mfa-session.js?v=20261003-totp"></script><script src="js/protected-files.js?v=20261003-totp"></script><script src="js/auth.js?v=20261004-admin-user-identity"></script>
+    <script src="js/layout.js"></script>
+    <script src="js/account-applications.js?v=20261007-secretary-restoration"></script>
+    <script src="js/secretary-access.js?v=20261007-fair-rankings"></script>
+    <script>
+      let currentProfile = null;
+      let systemUsers = [];
+      let editingComplianceId = null, editingComplianceIsOpen = true;
+      // Sort names such as Barangay 1 … Barangay 11 by their number, rather
+      // than alphabetically (which places Barangay 10 before Barangay 2).
+      const naturalBarangaySort = (a, b) =>
+        String(a.name || a).localeCompare(String(b.name || b), undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+
+      async function init() {
+        currentProfile = await guardPage(["super_admin"]);
+        if (!currentProfile) return;
+        renderSidebar("admin.html", currentProfile.role); initThemeToggle("theme-toggle-mount");
+
+        document.querySelectorAll(".tab-btn").forEach((btn) => {
+          btn.addEventListener("click", () => switchTab(btn.dataset.tab));
+        });
+
+        renderPeriodFilter(document.getElementById("audit-period-filter"), {
+          years: defaultPeriodYears(),
+          month: auditPeriod.month,
+          year: auditPeriod.year,
+          onChange: ({ month, year }) => {
+            auditPeriod = { month, year };
+            renderAuditRows();
+          },
+        });
+
+        await Promise.all([
+          loadUsers(),
+          loadBarangays(),
+          loadMandates(),
+          loadAudit(),
+          loadAccountApplications(),
+          loadSecretaryAccess(),
+        ]);
+      }
+
+      function switchTab(tab) {
+        document
+          .querySelectorAll("section[id^='tab-']")
+          .forEach((s) => (s.style.display = "none"));
+        document.getElementById(`tab-${tab}`).style.display = "block";
+        document
+          .querySelectorAll(".tab-btn")
+          .forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+        if (tab === "access") loadSecretaryAccess();
+        if (tab === "users") loadUsers();
+      }
+
+      async function loadUsers() {
+        const { data, error } = await supabaseClient.rpc("list_system_users");
+        if (error) {
+          document.getElementById("users-body").innerHTML = `<tr><td colspan="6" style="padding:18px;color:var(--color-danger);">Could not load users: ${error.message}</td></tr>`;
+          return;
+        }
+        systemUsers = Array.isArray(data) ? data.filter(u => !u.access_removed_at) : [];
+        document.getElementById("users-body").innerHTML = systemUsers
+          .map(
+            (u) => `<tr>
+        <td style="font-weight:600;">${escapeProfile(u.full_name)}</td>
+        <td>${escapeProfile(u.email)}</td>
+        <td>${ROLE_LABEL[u.role] || u.role}</td>
+        <td>${escapeProfile(u.barangays?.name || "—")}</td>
+        <td><span class="pill ${u.is_active ? "success" : "danger"}">${u.access_removed_at ? "Removed" : u.is_active ? "Active" : "Disabled"}</span></td>
+        <td><div class="user-account-actions">${u.id !== currentProfile.id && !u.access_removed_at ? `<button class="btn btn-public-rankings btn-small" data-action="remove-user" data-id="${u.id}">Remove</button>` : u.access_removed_at ? "Access removed" : "Your account"}${u.id !== currentProfile.id && u.is_active ? ` <button class="btn btn-outline btn-small" data-action="reset-mfa" data-id="${u.id}">Reset authenticator</button><button class="btn btn-outline btn-small" data-action="resend-invite" data-id="${u.id}">Resend setup email</button>` : ""}</div></td>
+      </tr>`,
+          )
+          .join("");
+        if (!data?.length) document.getElementById("users-body").innerHTML = `<tr><td colspan="6" style="padding:18px;text-align:center;color:var(--color-ink-600);">No user profiles found. Create a user or check the Supabase profiles table.</td></tr>`;
+      }
+
+      async function loadBarangays() {
+        const { data, error } = await supabaseClient
+          .from("barangays")
+          .select("id, code, name, is_active, profiles(full_name, email, role, is_active)")
+          .order("code");
+        if (error)
+          return showToast(`Could not load barangays: ${error.message}`);
+        document.getElementById("barangays-body").innerHTML = (data || [])
+          .sort(naturalBarangaySort)
+          .map(
+            (b) => `<tr>
+        <td>${b.code}</td><td style="font-weight:600;">${b.name}</td><td>${(() => { const secretary = (b.profiles || []).find((p) => p.role === "barangay_secretary" && p.is_active); return secretary ? `${escapeProfile(secretary.full_name)}<div style="font-size:12px;color:var(--color-ink-400);">${escapeProfile(secretary.email || "")}</div>` : "—"; })()}</td>
+        <td><span class="pill ${b.is_active ? "success" : "neutral"}">${b.is_active ? "Yes" : "No"}</span></td>
+        <td><button class="btn btn-outline btn-small" data-action="edit-barangay" data-id="${b.id}">Edit</button></td>
+      </tr>`,
+          )
+          .join("");
+        /* Cluster and district fields are no longer shown or edited.
+        (data || []).forEach((b, index) => {
+          const row = document.querySelectorAll("#barangays-body tr")[index];
+          row?.children[3]?.insertAdjacentHTML(
+            "beforebegin",
+            `<td>${b.district || "—"}</td>`,
+          );
+          row?.insertAdjacentHTML(
+            "beforeend",
+            `<td><button class="btn btn-outline btn-small" data-action="edit-barangay" data-id="${b.id}">Edit</button></td>`,
+          );
+        }); */
+      }
+
+      async function loadClusters() {
+        const { data, error } = await supabaseClient
+          .from("clusters")
+          .select("*")
+          .order("name");
+        if (error) return showToast(error.message);
+        clusters = data || [];
+        document.getElementById("cluster-summary").textContent =
+          `${clusters.length} cluster${clusters.length === 1 ? "" : "s"} configured`;
+      }
+
+      async function loadMandates() {
+        const { data, error } = await supabaseClient
+          .from("mandates")
+          .select("*")
+          .neq("status", "archived")
+          .order("category")
+          .order("title");
+        if (error) return showToast(`Could not load mandates: ${error.message}`);
+        document.getElementById("mandates-body").innerHTML = (data || [])
+          .map(
+            (m) => `<tr>
+        <td style="font-weight:600;">${m.title}</td><td>${m.category}</td><td>${m.max_points}</td>
+        <td><span class="pill ${m.status === "active" ? "success" : "neutral"}">${m.status}</span></td>
+        <td><button class="btn btn-outline btn-small" data-action="edit-mandate" data-id="${m.id}">Edit</button> <button class="btn btn-outline btn-small" data-action="remove-mandate" data-id="${m.id}">Remove</button></td>
+      </tr>`,
+          )
+          .join("");
+      }
+
+      async function loadCompliancePeriods() {
+        const { data, error } = await supabaseClient
+          .from("compliance_periods")
+          .select("*")
+          .order("deadline_at", { ascending: false });
+        if (error) {
+          document.getElementById("compliance-body").innerHTML = `<tr><td colspan="6" style="padding:18px;color:var(--color-danger);">Could not load compliance deadlines: ${error.message}. Run migration 0008 in Supabase first.</td></tr>`;
+          return showToast(`Could not load compliance deadlines: ${error.message}`);
+        }
+        document.getElementById("compliance-body").innerHTML =
+          (data || [])
+            .map(
+              (p) => `
+    <tr><td style="font-weight:600;">${p.title}</td><td>${p.period_label} ${p.compliance_year}</td>
+    <td>${new Date(p.deadline_at).toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" })}</td>
+    <td>${p.grace_period_hours} hours</td><td><span class="pill ${p.is_open ? "success" : "neutral"}">${p.is_open ? "Open" : "Closed"}</span></td>
+    <td><button class="btn btn-outline btn-small" data-action="edit-compliance" data-id="${p.id}">Edit</button> <button class="btn btn-outline btn-small" data-action="toggle-compliance" data-id="${p.id}">${p.is_open ? "Close" : "Reopen"}</button></td></tr>`,
+            )
+            .join("") ||
+          `<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--color-ink-400);">No compliance deadlines created yet.</td></tr>`;
+      }
+
+      async function editCompliancePeriod(id = null) {
+        let existing = null;
+        if (id) {
+          const { data, error } = await supabaseClient
+            .from("compliance_periods")
+            .select("*")
+            .eq("id", id)
+            .single();
+          if (error) return showToast(error.message);
+          existing = data;
+        }
+        editingComplianceId = id;
+        const localDatetime = (value) => { if (!value) return ""; const d = new Date(value); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
+        const existingLocal = localDatetime(existing?.deadline_at);
+        document.getElementById("compliance-modal-title").textContent = id ? "Edit Compliance Deadline" : "New Compliance Deadline";
+        document.getElementById("compliance-name").value = existing?.title || "Barangay Annual Compliance";
+        document.getElementById("compliance-period-label").value = existing?.period_label || "Annual";
+        document.getElementById("compliance-year").value = existing?.compliance_year || new Date().getFullYear();
+        document.getElementById("compliance-date").value = existingLocal.slice(0, 10);
+        document.getElementById("compliance-time").value = existingLocal.slice(11, 16);
+        document.getElementById("compliance-grace").value = existing?.grace_period_hours ?? 48;
+        editingComplianceIsOpen = existing?.is_open ?? true;
+        document.getElementById("compliance-error").style.display = "none";
+        document.getElementById("compliance-modal").style.display = "flex";
+      }
+
+      async function toggleCompliancePeriod(id) {
+        const { data: current, error: readError } = await supabaseClient
+          .from("compliance_periods")
+          .select("id,is_open,title")
+          .eq("id", id)
+          .single();
+        if (readError) return showToast(readError.message);
+        const { error } = await supabaseClient
+          .from("compliance_periods")
+          .update({ is_open: !current.is_open })
+          .eq("id", id);
+        if (error) return showToast(error.message);
+        await recordAdminAction(
+          "COMPLIANCE_DEADLINE_UPDATED",
+          "compliance_periods",
+          id,
+          { is_open: !current.is_open },
+        );
+        await loadCompliancePeriods();
+      }
+
+      async function loadAudit() {
+        const { data, error } = await supabaseClient
+          .from("audit_logs")
+          .select("*, profiles(full_name)")
+          .order("created_at", { ascending: false })
+          .limit(300);
+        if (error)
+          return showToast(`Could not load audit log: ${error.message}`);
+        auditCache = data || [];
+        renderAuditRows();
+      }
+
+      let auditCache = [], auditPeriod = { month: String(new Date().getMonth() + 1), year: String(new Date().getFullYear()) };
+      function renderAuditRows() {
+        const rows = auditCache.filter((a) =>
+          matchesPeriod(a.created_at, auditPeriod.month, auditPeriod.year),
+        );
+        document.getElementById("audit-body").innerHTML =
+          rows
+            .map(
+              (a) => `<tr>
+        <td>${new Date(a.created_at).toLocaleString("en-PH")}</td>
+        <td>${escapeProfile(a.profiles?.full_name || "System")}</td>
+        <td><span class="pill neutral">${a.action}</span></td>
+        <td>${a.entity_table || "—"}</td>
+      </tr>`,
+            )
+            .join("") ||
+          '<tr><td colspan="4" style="text-align:center;padding:25px;">No audit entries for this period.</td></tr>';
+      }
+
+      document.getElementById("nu-restore").addEventListener("change", () => {
+        document.getElementById("user-error").style.display = "none";
+      });
+      document.getElementById("new-user-btn").addEventListener("click", () => {
+        document.getElementById("user-error").style.display = "none";
+        document.getElementById("nu-restore").checked = false;
+        document.getElementById("user-modal").style.display = "flex";
+        document.getElementById("nu-name").focus();
+      });
+      document.getElementById("cancel-user").addEventListener("click", () => {
+        document.getElementById("user-modal").style.display = "none";
+      });
+      document.getElementById("cancel-compliance").addEventListener("click", () => {
+        document.getElementById("compliance-modal").style.display = "none";
+      });
+      document.getElementById("save-compliance").addEventListener("click", async () => {
+        const errorBox = document.getElementById("compliance-error");
+        const title = document.getElementById("compliance-name").value.trim();
+        const periodLabel = document.getElementById("compliance-period-label").value.trim();
+        const year = Number(document.getElementById("compliance-year").value);
+        const deadlineDate = document.getElementById("compliance-date").value;
+        const deadlineTime = document.getElementById("compliance-time").value;
+        const deadline = new Date(`${deadlineDate}T${deadlineTime}`);
+        const grace = Number(document.getElementById("compliance-grace").value);
+        errorBox.style.display = "none";
+        if (!title || !periodLabel || !Number.isInteger(year) || !deadlineDate || !deadlineTime || Number.isNaN(deadline.getTime()) || !Number.isInteger(grace) || grace < 0) {
+          errorBox.textContent = "Enter a compliance name, period, year, valid deadline date/time, and grace period.";
+          errorBox.style.display = "block";
+          return;
+        }
+        const payload = { title, compliance_year: year, period_label: periodLabel, deadline_at: deadline.toISOString(), grace_period_hours: grace, is_open: editingComplianceIsOpen };
+        if (!editingComplianceId) payload.created_by = currentProfile.id;
+        const request = editingComplianceId
+          ? supabaseClient.from("compliance_periods").update(payload).eq("id", editingComplianceId).select().single()
+          : supabaseClient.from("compliance_periods").insert(payload).select().single();
+        const { data, error } = await request;
+        if (error) { errorBox.textContent = error.message; errorBox.style.display = "block"; return; }
+        await recordAdminAction(editingComplianceId ? "COMPLIANCE_DEADLINE_UPDATED" : "COMPLIANCE_DEADLINE_CREATED", "compliance_periods", data.id, { title: data.title, deadline_at: data.deadline_at });
+        document.getElementById("compliance-modal").style.display = "none";
+        showToast(`Compliance deadline ${editingComplianceId ? "updated" : "created"}.`);
+        await loadCompliancePeriods();
+      });
+
+      document
+        .getElementById("confirm-user")
+        .addEventListener("click", async () => {
+          const errorBox = document.getElementById("user-error");
+          const button = document.getElementById("confirm-user");
+          if (button.disabled) return;
+          errorBox.style.display = "none";
+          const payload = {
+            full_name: document.getElementById("nu-name").value.trim(),
+            email: document.getElementById("nu-email").value.trim().toLowerCase(),
+            role: document.getElementById("nu-role").value,
+            setup_redirect: new URL("reset-password.html",location.href).href,
+            restore_existing: document.getElementById("nu-restore").checked,
+          };
+          if (!payload.full_name || !document.getElementById("nu-email").checkValidity() || !payload.email) {
+            errorBox.textContent = "Enter a name and valid email.";
+            errorBox.style.display = "block";
+            return;
+          }
+
+          button.disabled = true;
+          button.textContent = "Sending invitation…";
+          try {
+            const { data: sessionData } =
+              await supabaseClient.auth.getSession();
+            if (!sessionData?.session?.access_token) throw new Error("Sign in again before inviting an account.");
+            const res = await fetch(
+              `${SUPABASE_URL}/functions/v1/create-user`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${sessionData.session.access_token}`,
+                },
+                body: JSON.stringify(payload),
+              },
+            );
+            const result = await res.json().catch(() => ({}));
+            if (!res.ok || !result.success) throw new Error(result.error || "The invitation could not be completed.");
+            document.getElementById("user-modal").style.display = "none";
+            showToast(result.message || "A setup invitation has been sent.");
+            await Promise.all([loadUsers(),loadSecretaryAccess(),loadBarangays(),loadAudit()]);
+          } catch (err) {
+            errorBox.textContent = err.message;
+            errorBox.style.display = "block";
+          } finally {
+            button.disabled = false;
+            button.textContent = "Send invitation";
+          }
+        });
+
+      async function recordAdminAction(action, table, id, metadata = {}) {
+        await supabaseClient.rpc("log_audit_event", {
+          p_user_id: currentProfile.id,
+          p_action: action,
+          p_entity_table: table,
+          p_entity_id: id,
+          p_metadata: metadata,
+        });
+      }
+
+      document
+        .getElementById("new-mandate-btn")
+        .addEventListener("click", () => editMandate());
+
+      document.addEventListener("click", (event) => {
+        const button = event.target.closest("button[data-action]");
+        if (!button) return;
+        const actions = {
+          "remove-user": () => removeUser(button.dataset.id, button),
+          "reset-mfa": () => resetUserAuthenticator(button.dataset.id, button),
+          "resend-invite": () => resendUserInvitation(button.dataset.id, button),
+          "edit-barangay": () => editBarangay(button.dataset.id),
+          "edit-mandate": () => editMandate(button.dataset.id),
+          "remove-mandate": () => deleteMandate(button.dataset.id),
+          "edit-compliance": () => editCompliancePeriod(button.dataset.id),
+          "toggle-compliance": () => toggleCompliancePeriod(button.dataset.id),
+        };
+        actions[button.dataset.action]?.();
+      });
+
+      async function resetUserAuthenticator(id, button) {
+        const reason = prompt("Confirm the user's identity outside this website first. Enter your identity-check / support-ticket reason (10–1000 characters):");
+        if (!reason || reason.trim().length < 10) return;
+        if (!confirm("Remove this user's authenticators? Existing sessions will lose protected access. If they also forgot their password, send a setup email after the reset succeeds. They will save a new password, set up a new authenticator, then sign in again.")) return;
+        button.disabled = true;
+        try {
+          const { data, error } = await supabaseClient.functions.invoke("reset-user-mfa", { body: { user_id: id, reason } });
+          if (error || !data?.success) throw new Error(data?.error || "Reset failed. Contact the project owner before retrying.");
+          showToast(data.message);
+        } catch (error) { showToast(error.message); } finally { button.disabled = false; }
+      }
+
+      async function resendUserInvitation(id, button) {
+        if (button.disabled) return;
+        button.disabled = true;
+        try {
+          const { data, error } = await supabaseClient.functions.invoke("resend-user-invite", {body:{user_id:id}});
+          if (error || !data?.success) throw new Error(data?.error || "Could not send the setup email. Please try again later.");
+          showToast("A setup invitation has been sent.");
+        } catch (error) { showToast(error.message); }
+        finally { button.disabled = false; }
+      }
+
+      async function removeUser(id, button) {
+        if (button.disabled || id === currentProfile.id) return;
+        const user = systemUsers.find(u => u.id === id);
+        if (!user || user.access_removed_at) return;
+        button.disabled = true;
+        try {
+          const values = await showAdminForm("Remove account", [
+            {name:"reason",label:"Reason for removal",type:"textarea",required:true,minLength:10,maxLength:1000}
+          ], "Remove " + user.email + " from system access? Existing sessions will lose access. Their submitted files, original authorship and history will remain. This account cannot be assigned as a replacement.");
+          if (!values) return;
+          const { data, error } = await supabaseClient.rpc("remove_system_user", {p_user_id:id,p_reason:values.reason.trim()});
+          if (error || !data?.success) throw new Error(error?.message || "The account could not be removed.");
+          showToast("Account access removed. Submitted files and history are preserved.");
+          await Promise.all([loadUsers(),loadSecretaryAccess(),loadBarangays(),loadAudit()]);
+        } catch (error) { showToast(error.message); }
+        finally { button.disabled = false; }
+      }
+
+      async function editMandate(id = null) {
+        let existing = null;
+        if (id) {
+          const result = await supabaseClient
+            .from("mandates")
+            .select("*")
+            .eq("id", id)
+            .single();
+          if (result.error) return showToast(result.error.message);
+          existing = result.data;
+        }
+        const values = await showAdminForm(id ? "Edit mandate" : "New mandate", [
+          {name:"title",label:"Mandate title",value:existing?.title,required:true,maxLength:200},
+          {name:"category",label:"Category",value:existing?.category,required:true,maxLength:200},
+          {name:"max_points",label:"Maximum points",type:"number",value:existing?.max_points ?? 5,required:true,min:0,step:"any"},
+          {name:"status",label:"Status",value:existing?.status || "active",options:[{value:"draft",label:"Draft"},{value:"active",label:"Active"},{value:"archived",label:"Archived"}]},
+          {name:"description",label:"Description (optional)",type:"textarea",value:existing?.description}
+        ]);
+        if(!values) return;
+        const payload = {title:values.title.trim(),category:values.category.trim(),max_points:Number(values.max_points),status:values.status,description:values.description.trim() || null};
+        if(!payload.title || !payload.category || !Number.isFinite(payload.max_points) || payload.max_points<0) return showToast("Enter a title, category and valid maximum points.");
+        if (!id) payload.created_by = currentProfile.id;
+        const request = id
+          ? supabaseClient
+              .from("mandates")
+              .update(payload)
+              .eq("id", id)
+              .select()
+              .single()
+          : supabaseClient.from("mandates").insert(payload).select().single();
+        const { data, error } = await request;
+        if (error) return showToast(error.message);
+        await recordAdminAction(
+          id ? "MANDATE_UPDATED" : "MANDATE_CREATED",
+          "mandates",
+          data.id,
+          { title: data.title },
+        );
+        showToast(`Mandate ${id ? "updated" : "created"}.`);
+        await loadMandates();
+      }
+
+      async function deleteMandate(id) {
+        const { data: mandate } = await supabaseClient
+          .from("mandates")
+          .select("title")
+          .eq("id", id)
+          .single();
+        if (!confirm(`Remove "${mandate?.title || "this mandate"}"? Mandates with existing MOV records are archived to preserve compliance history.`))
+          return;
+        const { error } = await supabaseClient.rpc("remove_mandate_safely", {
+          p_mandate_id: id,
+        });
+        if (error) return showToast(error.message);
+        await recordAdminAction("MANDATE_DELETED", "mandates", id, {
+          title: mandate?.title,
+        });
+        showToast("Mandate removed.");
+        await loadMandates();
+      }
+
+      async function editBarangay(id = null) {
+        let existing = null;
+        if (id) {
+          const result = await supabaseClient
+            .from("barangays")
+            .select("*")
+            .eq("id", id)
+            .single();
+          if (result.error) return showToast(result.error.message);
+          existing = result.data;
+        }
+        const values = await showAdminForm(id ? "Edit barangay" : "New barangay", [
+          {name:"code",label:"Barangay code",value:existing?.code,required:true,maxLength:50},
+          {name:"name",label:"Barangay name",value:existing?.name,required:true,maxLength:150},
+          {name:"is_active",label:"Status",value:String(existing?.is_active ?? true),options:[{value:"true",label:"Active"},{value:"false",label:"Inactive"}]}
+        ]);
+        if(!values) return;
+        const payload = {code:values.code.trim(),name:values.name.trim(),is_active:values.is_active === "true"};
+        if(!payload.code || !payload.name) return showToast("Enter the barangay code and name.");
+        const request = id
+          ? supabaseClient
+              .from("barangays")
+              .update(payload)
+              .eq("id", id)
+              .select()
+              .single()
+          : supabaseClient.from("barangays").insert(payload).select().single();
+        const { data, error } = await request;
+        if (error) return showToast(error.message);
+        await recordAdminAction(
+          id ? "BARANGAY_UPDATED" : "BARANGAY_CREATED",
+          "barangays",
+          data.id,
+          { code: data.code },
+        );
+        showToast(`Barangay ${id ? "updated" : "created"}.`);
+        await loadBarangays();
+      }
+
+      async function manageClusters() {
+        const listed = clusters.map((c) => c.name).join(", ") || "none";
+        const action = prompt(
+          `Clusters: ${listed}\n\nType add, rename, or delete.`,
+        );
+        if (!action) return;
+        if (action === "add") {
+          const name = prompt("New cluster name");
+          if (!name?.trim()) return;
+          const description = prompt("Cluster description (optional)") ?? "";
+          const { data, error } = await supabaseClient
+            .from("clusters")
+            .insert({
+              name: name.trim(),
+              description: description.trim() || null,
+            })
+            .select()
+            .single();
+          if (error) return showToast(error.message);
+          await recordAdminAction("CLUSTER_CREATED", "clusters", data.id, {
+            name: data.name,
+          });
+        } else if (["rename", "delete"].includes(action)) {
+          const name = prompt(`Existing cluster name: ${listed}`);
+          if (!name) return;
+          const cluster = clusters.find(
+            (c) => c.name.toLowerCase() === name.trim().toLowerCase(),
+          );
+          if (!cluster) return alert("Cluster not found.");
+          if (action === "rename") {
+            const newName = prompt("New cluster name", cluster.name);
+            if (!newName?.trim()) return;
+            const { error } = await supabaseClient
+              .from("clusters")
+              .update({ name: newName.trim() })
+              .eq("id", cluster.id);
+            if (error) return showToast(error.message);
+            await recordAdminAction("CLUSTER_UPDATED", "clusters", cluster.id, {
+              name: newName.trim(),
+            });
+          } else {
+            if (
+              !confirm(
+                `Delete ${cluster.name}? Linked barangays will be left without a cluster.`,
+              )
+            )
+              return;
+            const { error } = await supabaseClient
+              .from("clusters")
+              .delete()
+              .eq("id", cluster.id);
+            if (error) return showToast(error.message);
+            await recordAdminAction("CLUSTER_DELETED", "clusters", cluster.id, {
+              name: cluster.name,
+            });
+          }
+        } else return alert("Type add, rename, or delete.");
+        await loadClusters();
+        await loadBarangays();
+        showToast("Cluster saved.");
+      }
+
+    </script>
+
+    <style>
+      .tab-btn {
+        background: none;
+        border: none;
+        padding: 10px 16px;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--color-ink-600);
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+      }
+      .tab-btn.active {
+        color: var(--color-navy-900);
+        border-bottom-color: var(--color-gold-500);
+      }
+    </style>
+
+    <script>
+      init();
+    </script>
+  </body>
+</html>
+

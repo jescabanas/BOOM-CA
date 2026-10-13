@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en" data-theme-scope="system">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Compliance Review — Barangay Compliance System</title>
+    <link rel="stylesheet" href="css/styles.css?v=20261006-file-actions" />
+    <script src="js/theme.js?v=20261003-internal-theme"></script>
+    <script src="js/period-filter.js?v=20261008-admin-deadlines"></script>
+    <script src="js/submission-evidence.js?v=20261006"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8/dist/umd/supabase.js"></script>
+  <script src="js/password-toggle.js?v=20261005" defer></script></head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <img src="assets/images/DILG-Logo-new.png" alt="DILG Seal" class="brand-seal" />
+          <div class="brand-text">
+            <div class="name">Barangay<br>Compliance<br>System</div>
+          </div>
+        </div>
+        <nav id="sidebar-nav"></nav>
+        <div class="theme-toggle-mount" id="theme-toggle-mount"></div>        <div class="sidebar-footer">
+          <a href="#" onclick="logout()" style="color: inherit">Sign out</a>
+        </div>
+      </aside>
+      <main class="main">
+        <div class="topbar">
+          <div class="page-title">
+            <div class="eyebrow">Compliance Review</div>
+            <h1 style="margin: 0">Submission History & Review</h1>
+          </div>
+          <div class="user-chip" id="user-chip"></div>
+        </div>
+        <div style="display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center;">
+          <select id="status-filter">
+            <option value="all">All review statuses</option>
+            <option value="under_review">Needs review</option>
+            <option value="pending">Pending review</option>
+            <option value="correction_requested">
+              Returned / needs revision
+            </option>
+            <option value="approved">Approved</option>
+            <option value="rejected">Rejected</option>
+          </select>
+          <div class="period-filter-row" id="review-period-filter" style="margin-bottom:0;"></div>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Barangay</th>
+              <th>Compliance period</th>
+              <th>Deadline</th>
+              <th>Submitted</th>
+              <th>Review status</th>
+              <th>Submission status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="queue-body">
+            <tr>
+              <td colspan="7" style="text-align: center; padding: 30px">
+                Loading…
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </main>
+    </div>
+    <div
+      id="review-modal"
+      role="dialog" aria-modal="true" aria-label="Review compliance submission"
+      style="
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(11, 31, 58, 0.5);
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+        overflow: auto;
+        padding: 24px;
+      "
+    >
+      <div class="card review-modal-card">
+        <div class="review-modal-heading">
+          <h3 style="margin-top: 0">Review Compliance Submission</h3>
+          <button class="btn btn-outline dialog-close" id="cancel-review" aria-label="Close submission review">
+            ×
+          </button>
+        </div>
+        <div id="review-docs" class="review-evidence"></div>
+        <div id="past-remarks" class="review-history"></div>
+        <div class="field">
+          <label for="remark-document"
+            >MOV this remark applies to (optional)</label
+          ><select id="remark-document">
+            <option value="">Entire submission</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="remark-mandate"
+            >Mandate category this remark applies to (optional)</label
+          ><select id="remark-mandate">
+            <option value="">Entire submission</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="remarks"
+            >Reviewer's remarks (required when returning or rejecting)</label
+          ><textarea id="remarks" rows="3"></textarea>
+        </div>
+        <div class="dialog-actions">
+          <button class="btn btn-outline" id="request-correction">
+            Return for Revision</button
+          ><button class="btn btn-danger" id="reject-btn">Reject</button
+          ><button class="btn btn-primary" id="approve-btn">Approve</button>
+        </div>
+      </div>
+    </div>
+    <script src="env.js"></script>
+    <script src="js/supabaseClient.js?v=20260806-authfix"></script>
+    <script src="js/mfa-config.js?v=20261003-totp"></script><script src="js/mfa-service.js?v=20261003-totp"></script><script src="js/mfa-session.js?v=20261003-totp"></script><script src="js/protected-files.js?v=20261003-totp"></script><script src="js/auth.js?v=20261003-totp"></script>
+    <script src="js/layout.js"></script>
+    <script src="js/document-preview.js?v=20261003-totp"></script>
+    <script>
+      let currentProfile, activeSubmissionId;
+      let reviewPeriod = { month: "", year: "" };
+      const esc = (v) =>
+        String(v ?? "").replace(
+          /[&<>'"]/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              "'": "&#39;",
+              '"': "&quot;",
+            })[c],
+        );
+      const date = (v) =>
+        v
+          ? new Date(v).toLocaleString("en-PH", {
+              dateStyle: "medium",
+              timeStyle: "short",
+            })
+          : "—";
+      function reviewStatus(s) {
+        if (s.status === "approved") return ["success", "Approved"];
+        if (s.status === "correction_requested") return ["warning", "Needs revision"];
+        if (s.status === "rejected") return ["danger", "Rejected"];
+        return ["warning", "Pending review"];
+      }
+      function submissionStatus(s) {
+        if (s.score_band === "on_time") return ["success", "Advanced"];
+        if (s.score_band === "grace_period") return ["warning", "On time"];
+        if (s.score_band === "late") return ["danger", "Late"];
+        return ["neutral", "Not submitted"];
+      }
+      async function init() {
+        currentProfile = await guardPage(["super_admin"]);
+        if (!currentProfile) return;
+        renderSidebar("evaluator.html", currentProfile.role); initThemeToggle("theme-toggle-mount");
+        const dashboardFilter = new URLSearchParams(location.search);
+        const requestedStatus = dashboardFilter.get("status");
+        if (requestedStatus) document.getElementById("status-filter").value = requestedStatus;
+        window.reviewBandFilter = dashboardFilter.get("band") || "";
+        window.reviewPeriodId = dashboardFilter.get("period") || "";
+        const now = new Date();
+        window.reviewAnalyticsMode = dashboardFilter.get("analyticsMode") || "";
+        window.reviewAnalyticsValue = dashboardFilter.get("analyticsValue") || "";
+        reviewPeriod = {
+          month: dashboardFilter.get("month") || (window.reviewAnalyticsMode === "monthly" ? window.reviewAnalyticsValue : String(now.getMonth() + 1)),
+          year: dashboardFilter.get("year") || String(now.getFullYear()),
+        };
+        document
+          .getElementById("status-filter")
+          .addEventListener("change", loadQueue);
+        renderPeriodFilter(document.getElementById("review-period-filter"), {
+          years: defaultPeriodYears(),
+          month: reviewPeriod.month,
+          year: reviewPeriod.year,
+          onChange: ({ month, year }) => {
+            reviewPeriod = { month, year };
+            window.reviewAnalyticsMode = "";
+            window.reviewAnalyticsValue = "";
+            loadQueue();
+          },
+        });
+        await loadQueue();
+      }
+      async function loadQueue() {
+        const status = document.getElementById("status-filter").value;
+        let query = supabaseClient
+          .from("submissions")
+          .select(
+            "*, barangays(name), compliance_periods(title,period_label,compliance_year,deadline_at), documents(id,is_current,file_size_bytes), profiles!submissions_evaluator_id_fkey(full_name)",
+          )
+          .not("compliance_period_id", "is", null)
+          .not("submitted_at", "is", null)
+          .order("last_submitted_at", { ascending: false, nullsFirst: false });
+        // Only reports sent with evidence belong in the submitted review queue.
+        if (status === "pending") query = query.eq("status", "under_review");
+        else if (status && status !== "all") query = query.eq("status", status);
+        if (window.reviewBandFilter) query = query.eq("score_band", window.reviewBandFilter);
+        if (window.reviewPeriodId) query = query.eq("compliance_period_id", window.reviewPeriodId);
+        const { data, error } = await query;
+        const body = document.getElementById("queue-body");
+        if (error) {
+          showToast(error.message);
+          return;
+        }
+        const rows = (data || []).filter((s) => {
+          if (!isSubmittedWithEvidence(s)) return false;
+          const deadline = s.compliance_periods?.deadline_at;
+          if (window.reviewPeriodId) return true;
+          if (window.reviewAnalyticsMode && window.reviewAnalyticsValue) {
+            return matchesAnalyticsPeriod(deadline, { mode: window.reviewAnalyticsMode, value: window.reviewAnalyticsValue });
+          }
+          return matchesPeriod(deadline, reviewPeriod.month, reviewPeriod.year);
+        });
+        body.innerHTML =
+          rows
+            .map((s) => {
+              const [reviewClass, reviewLabel] = reviewStatus(s),
+                [submissionClass, submissionLabel] = submissionStatus(s),
+                p = s.compliance_periods || {};
+              const canReview = s.status === "under_review";
+              return `<tr><td style="font-weight:600;">${esc(s.barangays?.name)}</td><td>${esc(p.title)}<div style="font-size:12px;color:var(--color-ink-400);">${esc(p.period_label)} ${p.compliance_year || ""}</div></td><td>${date(p.deadline_at)}</td><td>${date(s.last_submitted_at || s.submitted_at)}</td><td><span class="pill ${reviewClass}">${reviewLabel}</span></td><td><span class="pill ${submissionClass}">${submissionLabel}</span></td><td><button class="btn btn-outline btn-small" onclick="openReview('${s.id}')">${canReview ? "Review" : "View"}</button></td></tr>`;
+            })
+            .join("") ||
+          '<tr><td colspan="7" style="text-align:center;padding:30px;">No compliance submissions found.</td></tr>';
+      }
+      async function openReview(id) {
+        activeSubmissionId = id;
+        document.getElementById("remarks").value = "";
+        // The previous item's history is moved into review-docs while open.
+        // Put the reusable container back before loading the next item.
+        const reviewDocs = document.getElementById("review-docs");
+        const pastRemarks = document.getElementById("past-remarks");
+        if (pastRemarks.parentElement !== reviewDocs) {
+          reviewDocs.after(pastRemarks);
+        }
+        const [{ data: submission }, { data: docs, error: docsError }, { data: remarks }, { data: mandates }] =
+          await Promise.all([
+            supabaseClient
+              .from("submissions")
+              .select("submission_notes,last_submitted_at,submitted_at,status,is_locked")
+              .eq("id", id)
+              .single(),
+            supabaseClient
+              .from("documents")
+              .select(
+                "id,file_name,file_size_bytes,storage_path,uploaded_at,document_mandates(mandate_id,mandates(title,category))",
+              )
+              .eq("submission_id", id)
+              .eq("is_current", true)
+              .order("uploaded_at", { ascending: false }),
+            supabaseClient
+              .from("submission_remarks")
+              .select(
+                "remark,created_at,profiles!submission_remarks_author_id_fkey(full_name),documents(file_name),mandates(title)",
+              )
+              .eq("submission_id", id)
+              .order("created_at", { ascending: false }),
+            supabaseClient
+              .from("mandates")
+              .select("id,title,category")
+              .eq("status", "active")
+              .order("category"),
+          ]);
+        document.getElementById("remark-document").innerHTML =
+          '<option value="">Entire submission</option>' +
+          (docs || [])
+            .map((d) => `<option value="${d.id}">${esc(d.file_name)}</option>`)
+            .join("");
+        document.getElementById("remark-mandate").innerHTML =
+          '<option value="">Entire submission</option>' +
+          (mandates || [])
+            .map(
+              (m) =>
+                `<option value="${m.id}">${esc(m.title)} — ${esc(m.category)}</option>`,
+            )
+            .join("");
+        if (docsError) return showToast('Could not load MOV files. Please try again.');
+        const canDecide = submission?.status === 'under_review' && !submission?.is_locked;
+        document.getElementById('approve-btn').disabled = !canDecide || !(docs || []).length;
+        document.getElementById('reject-btn').disabled = !canDecide;
+        document.getElementById('request-correction').disabled = !canDecide;
+        const links = await Promise.all(
+          (docs || []).map(async (d) => {
+            const cats =
+              (d.document_mandates || [])
+                .map((x) => esc(x.mandates?.title))
+                .join(", ") || "No category";
+            return `<article class="mov-file-card"><div class="mov-file-card-main"><strong>${esc(d.file_name)}</strong><div class="mov-file-meta">${cats}</div></div><div class="mov-file-actions"><button class="btn btn-outline btn-small" type="button" onclick="openProtectedDocument(decodeURIComponent('${encodeURIComponent(d.storage_path).replace(/'/g, '%27')}'), decodeURIComponent('${encodeURIComponent(d.file_name).replace(/'/g, '%27')}'))">Preview</button><div class="mov-file-time">${date(d.uploaded_at)}</div></div></article>`;
+          }),
+        );
+        document.getElementById("review-docs").innerHTML =
+          `<section class="submission-detail-box"><div class="submission-note-card"><div class="section-kicker">Secretary's remarks / notes</div><div class="submission-note-text">${submission?.submission_notes ? esc(submission.submission_notes) : "<em>No notes provided.</em>"}</div><div class="submission-note-time">Last submitted: ${date(submission?.last_submitted_at || submission?.submitted_at)}</div></div><section class="review-section"><div class="review-section-heading"><h4>MOV files</h4><span>Newest first</span></div><div class="mov-file-list">${links.join("") || "<div class=\"empty-review-state\">No MOV files attached. A file is required before approval.</div>"}</div></section>`;
+        document.getElementById("past-remarks").innerHTML = (remarks || [])
+          .length
+          ? `<section class="review-section review-history-section"><div class="review-section-heading"><h4>Review history</h4><span>${remarks.length} ${remarks.length === 1 ? "entry" : "entries"}</span></div><div class="review-timeline">${remarks.map((r) => `<article class="review-history-card"><div class="review-history-top"><strong>${esc(r.profiles?.full_name || "Reviewer")}</strong><time>${date(r.created_at)}</time></div><p>${esc(r.remark)}</p>${r.documents?.file_name || r.mandates?.title ? `<div class="review-tags">${r.documents?.file_name ? `<span>MOV: ${esc(r.documents.file_name)}</span>` : ""}${r.mandates?.title ? `<span>Mandate: ${esc(r.mandates.title)}</span>` : ""}</div>` : "<div class=\"review-tags\"><span>Entire submission</span></div>"}</article>`).join("")}</div></section>`
+          : `<section class="review-section review-history-section"><div class="review-section-heading"><h4>Review history</h4></div><div class="empty-review-state">No previous review remarks.</div></section>`;
+        const detailBox = document.querySelector("#review-docs .submission-detail-box");
+        if (detailBox) detailBox.appendChild(pastRemarks);
+        document.getElementById("review-modal").style.display = "flex";
+      }
+      document
+        .getElementById("cancel-review")
+        .addEventListener(
+          "click",
+          () =>
+            (document.getElementById("review-modal").style.display = "none"),
+        );
+      async function decide(status) {
+        const remark = document.getElementById("remarks").value.trim();
+        if (["rejected", "correction_requested"].includes(status) && !remark)
+          return alert("Please add remarks explaining the decision.");
+        const { error } = await supabaseClient.rpc(
+          "review_compliance_submission",
+          {
+            p_submission_id: activeSubmissionId,
+            p_status: status,
+            p_remark: remark || null,
+            p_document_id:
+              document.getElementById("remark-document").value || null,
+            p_mandate_id:
+              document.getElementById("remark-mandate").value || null,
+          },
+        );
+        if (error) return alert("Could not save decision: " + error.message);
+        document.getElementById("review-modal").style.display = "none";
+        showToast("Review decision recorded.");
+        await loadQueue();
+      }
+      document
+        .getElementById("approve-btn")
+        .addEventListener("click", () => decide("approved"));
+      document
+        .getElementById("reject-btn")
+        .addEventListener("click", () => decide("rejected"));
+      document
+        .getElementById("request-correction")
+        .addEventListener("click", () => decide("correction_requested"));
+      init();
+    </script>
+  </body>
+</html>
+

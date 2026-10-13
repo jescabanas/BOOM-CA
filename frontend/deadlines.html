@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en" data-theme-scope="system">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Compliance Deadlines — Barangay Compliance System</title>
+    <link rel="stylesheet" href="css/styles.css?v=20261006-file-actions" />
+    <script src="js/theme.js?v=20261003-internal-theme"></script>
+    <script src="js/period-filter.js?v=20261008-admin-deadlines"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8/dist/umd/supabase.js"></script>
+  <script src="js/password-toggle.js?v=20261005" defer></script></head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand"><img src="assets/images/DILG-Logo-new.png" alt="DILG Seal" class="brand-seal" /><div class="brand-text"><div class="name">Barangay<br>Compliance<br>System</div></div></div>
+        <nav id="sidebar-nav"></nav>
+        <div class="theme-toggle-mount" id="theme-toggle-mount"></div>        <div class="sidebar-footer"><a href="#" onclick="logout()" style="color:inherit">Sign out</a></div>
+      </aside>
+      <main class="main">
+        <div class="topbar"><div class="page-title"><div class="eyebrow">Deadline Management</div><h1 style="margin:0">Compliance Deadlines</h1></div><div class="user-chip" id="user-chip"></div></div>
+        <div class="card">
+          <div class="deadline-toolbar"><div class="period-filter-row"><label for="deadline-filter-year">Year</label><select id="deadline-filter-year"></select></div><button class="btn btn-primary" id="new-btn">+ New Deadline</button></div>
+          <table class="data-table"><tbody id="body"></tbody></table>
+        </div>
+    <div id="deadline-modal" class="profile-modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="form-title">
+      <div class="card profile-modal deadline-editor">
+        <div class="dialog-heading"><div><div class="eyebrow">Deadline Management</div><h3 id="form-title">New Compliance Deadline</h3><p class="dialog-description">Set the submission window for this compliance period.</p></div><button class="btn btn-outline dialog-close" id="close-btn" type="button" aria-label="Close deadline editor">×</button></div>
+          <div class="field"><label for="deadline-name">Compliance name</label><input id="deadline-name" value="Barangay Annual Compliance" /></div>
+          <div class="form-grid"><div class="field"><label for="deadline-level">Period level</label><select id="deadline-level"><option value="Weekly">Weekly</option><option value="Monthly">Monthly</option><option value="Quarterly">Quarterly</option><option value="Semestral">Semestral</option><option value="Annual">Annual</option></select><small>Scheduled edits repeat for the same report number across this year. Dates stay relative to each month, quarter or semester.</small></div><div class="field"><label for="deadline-year">Year</label><input id="deadline-year" type="number" min="2000" max="2100" /></div></div>
+          <section class="dialog-section"><h4>Submission window</h4><p class="field-hint">All times are in the Philippines (UTC+8).</p>
+          <div class="form-grid"><div class="field"><label for="deadline-start-date">Start date</label><input id="deadline-start-date" type="date" /></div><div class="field"><label for="deadline-start-time">Start time</label><input id="deadline-start-time" type="time" step="1" /></div></div>
+          <div class="form-grid"><div class="field"><label for="deadline-date">End deadline</label><input id="deadline-date" type="date" /></div><div class="field"><label for="deadline-time">End time</label><input id="deadline-time" type="time" step="1" /></div></div></section>
+          <div class="field"><label for="deadline-grace">Grace period (hours)</label><input id="deadline-grace" type="number" min="0" value="48" /></div>
+          <div id="form-error" style="display:none;color:var(--color-danger);font-size:13px;margin-bottom:10px"></div>
+          <div class="dialog-actions"><button class="btn btn-outline" id="cancel-btn">Cancel</button><button class="btn btn-primary" id="save-btn">Save Deadline</button></div>
+      </div>
+    </div>
+      </main>
+    </div>
+    <script src="env.js"></script><script src="js/supabaseClient.js?v=20260806-authfix"></script><script src="js/mfa-config.js?v=20261003-totp"></script><script src="js/mfa-service.js?v=20261003-totp"></script><script src="js/mfa-session.js?v=20261003-totp"></script><script src="js/protected-files.js?v=20261003-totp"></script><script src="js/auth.js?v=20261003-totp"></script><script src="js/layout.js"></script>
+    <script>
+      let profile, editingId = null, editingScheduleId = null, editingPeriodLabel = null, editingIsOpen = true;
+      const date = (value) => value ? new Date(value).toLocaleString("en-PH", { timeZone: "Asia/Manila", dateStyle: "medium", timeStyle: "short" }) : "—";
+      const localValue = (value) => value ? new Date(new Date(value).getTime() + 8 * 3600000).toISOString().slice(0,19) : "";
+      let scheduleById = {};
+      const escapeHtml = value => String(value ?? "").replace(/[&<>'"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[c]);
+      const knownLevels = ["Weekly", "Monthly", "Quarterly", "Semestral", "Annual"];
+      const normalizeLevel = (value) => { const text = String(value || "").trim().toLowerCase(); if (text.includes("week")) return "Weekly"; if (text.includes("month") || text.includes("biweek")) return "Monthly"; if (text.includes("quarter")) return "Quarterly"; if (text.includes("annual") || text.includes("year")) return "Annual"; return "Semestral"; };
+      const closeForm = () => { document.getElementById("deadline-modal").style.display = "none"; editingId = null; editingScheduleId = null; editingPeriodLabel = null; };
+      async function init() { profile = await guardPage(["super_admin"]); if (!profile) return; renderSidebar("deadlines.html", profile.role); initThemeToggle("theme-toggle-mount"); document.getElementById("new-btn").onclick = () => openForm(); document.getElementById("cancel-btn").onclick = closeForm; document.getElementById("close-btn").onclick = closeForm; document.getElementById("deadline-modal").onclick = (event) => { if (event.target.id === "deadline-modal") closeForm(); }; document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeForm(); }); document.getElementById("save-btn").onclick = save; const yearSelect = document.getElementById("deadline-filter-year"); yearSelect.innerHTML = defaultPeriodYears().map(year => `<option value="${year}">${year}</option>`).join(""); yearSelect.onchange = load; await load(); }
+      async function load({ preserveView = false, focusId = null } = {}) {
+        const body = document.getElementById("body");
+        const view = preserveView ? {
+          x: window.scrollX, y: window.scrollY,
+          expanded: new Set([...body.querySelectorAll("details[data-deadline-key][open]")].map(details => details.dataset.deadlineKey)),
+          scroll: new Map([...body.querySelectorAll("details[data-deadline-key]")].map(details => {
+            const content = details.querySelector(":scope > .deadline-group-content");
+            return [details.dataset.deadlineKey, { x: content.scrollLeft, y: content.scrollTop }];
+          }))
+        } : null;
+        // This keeps one year of standing deadline occurrences ready. It is
+        // safe to call repeatedly: the database records each occurrence once.
+        const { error: generationError } = await supabaseClient.rpc("ensure_compliance_schedule_periods", { p_year: Number(document.getElementById("deadline-filter-year").value) });
+        if (generationError) {
+          document.getElementById("body").innerHTML = '<tr><td colspan="6">Could not load the complete schedule. Please contact your administrator.</td></tr>';
+          console.error(generationError);
+          return;
+        }
+        const [{ data, error }, { data: schedules }] = await Promise.all([
+          supabaseClient.from("compliance_periods").select("*").eq("compliance_year", Number(document.getElementById("deadline-filter-year").value)).order("starts_at", { ascending: true }),
+          supabaseClient.from("compliance_deadline_schedules").select("id,title,frequency").order("frequency"),
+        ]);
+        if (error) { body.innerHTML = `<tr><td colspan="6" style="padding:18px;color:var(--color-danger)">${error.message}. Run migration 0029 first.</td></tr>`; return; }
+        scheduleById = Object.fromEntries((schedules || []).map((schedule) => [schedule.id, schedule]));
+        const order = ["Weekly", "Monthly", "Quarterly", "Semestral", "Annual"];
+        const selectedYear = Number(document.getElementById("deadline-filter-year").value);
+        const groups = (data || []).filter(p => p.compliance_year === selectedYear).reduce((all, period) => {
+          const schedule = scheduleById[period.deadline_schedule_id];
+          const name = complianceFrequency(period, scheduleById);
+          (all[name] ||= []).push(period);
+          return all;
+        }, {});
+        const rows = (periods) => periods.map((p) => { const removeButton = p.deadline_schedule_id ? "" : ` <button class="btn btn-outline btn-small" onclick="removeDeadline('${p.id}',decodeURIComponent('${encodeURIComponent(p.title).replace(/'/g, '%27')}'))">Remove</button>`; return `<tr><td><strong>${escapeHtml(p.title)}</strong></td><td>${escapeHtml(p.period_label)} ${p.compliance_year}</td><td><small>Start</small><br>${date(p.starts_at)}<br><small>End</small><br>${date(p.deadline_at)}</td><td>${p.grace_period_hours} hours</td><td><span class="pill ${p.is_open ? "success" : "neutral"}">${p.is_open ? "Open" : "Closed"}</span></td><td><button class="btn btn-outline btn-small" data-deadline-edit="${p.id}" onclick="openForm('${p.id}')">Edit</button>${removeButton}</td></tr>`; }).join("");
+        const table = periods => `<table class="data-table"><thead><tr><th>Compliance</th><th>Period</th><th>Deadline</th><th>Grace</th><th>Status</th><th>Action</th></tr></thead><tbody>${rows(periods)}</tbody></table>`;
+        const reportNumber = period => Number(
+          String(period.occurrence_key || "").match(/-[WM](\d+)$/)?.[1] ||
+          String(period.period_label || period.title || "").match(/(?:Report|Week)\s+(\d+)/i)?.[1]
+        ) || Number.POSITIVE_INFINITY;
+        const content = name => {
+          if (!["Weekly", "Monthly"].includes(name)) return table(groups[name]);
+          return PERIOD_MONTHS.map((month, index) => {
+            const weeks = groups[name].filter(p => complianceMonth(p) === index + 1)
+              .sort((a, b) => reportNumber(a) - reportNumber(b) || new Date(a.starts_at) - new Date(b.starts_at) || String(a.title).localeCompare(String(b.title), undefined, { numeric: true }));
+            const key = `${name}-${index + 1}`;
+            return `<details class="deadline-month" data-deadline-key="${key}"${view?.expanded.has(key) ? " open" : ""}><summary><strong>${month}</strong><span>${weeks.length} reports</span></summary><div class="deadline-group-content">${weeks.length ? table(weeks) : '<p>No report deadlines scheduled for this month.</p>'}</div></details>`;
+          }).join("");
+        };
+        body.innerHTML = order.map(name => `<tr class="deadline-group-row"><td colspan="6"><details data-deadline-key="${name}"${view?.expanded.has(name) ? " open" : ""}><summary><strong>${name} compliance deadlines</strong><span>${groups[name]?.length || 0} periods ▾</span></summary><div class="deadline-group-content">${groups[name]?.length ? content(name) : '<p>No deadlines for this year.</p>'}</div></details></td></tr>`).join("");
+        if (view) {
+          // Restore horizontal table scrolling too, so the Edit column stays
+          // visible on narrow screens. Render expanded markup in one update.
+          body.querySelectorAll("details[data-deadline-key]").forEach(details => {
+            const saved = view.scroll.get(details.dataset.deadlineKey);
+            const content = details.querySelector(":scope > .deadline-group-content");
+            if (saved) { content.scrollLeft = saved.x; content.scrollTop = saved.y; }
+          });
+          if (focusId) [...body.querySelectorAll("[data-deadline-edit]")]
+            .find(button => button.dataset.deadlineEdit === focusId)?.focus({ preventScroll: true });
+          window.scrollTo({ left: view.x, top: view.y, behavior: "instant" });
+        }
+      }
+      async function removeDeadline(id, title) {
+        if (!confirm(`Remove "${title}" and its submissions? This cannot be undone.`)) return;
+        const { error } = await supabaseClient.from("compliance_periods").delete().eq("id", id);
+        if (error) return showToast(error.message);
+        showToast("Deadline removed.");
+        await load({ preserveView: true });
+      }
+      async function openForm(id = null) {
+        let item = null;
+        if (id) {
+          const { data, error } = await supabaseClient.from("compliance_periods").select("*").eq("id", id).single();
+          if (error) return showToast(error.message);
+          item = data;
+        }
+        editingId = id;
+        editingScheduleId = item?.deadline_schedule_id || null;
+        editingPeriodLabel = item?.period_label || null;
+        const local = localValue(item?.deadline_at);
+        const start = localValue(item?.starts_at);
+        document.getElementById("form-title").textContent = id ? `Edit ${item.period_label} deadline` : "New Compliance Deadline";
+        document.getElementById("deadline-name").value = item?.title || "Barangay Compliance";
+        document.getElementById("deadline-name").disabled = Boolean(editingScheduleId);
+        document.getElementById("deadline-level").value = item ? complianceFrequency(item, scheduleById) : "Weekly";
+        document.getElementById("deadline-level").disabled = Boolean(editingScheduleId);
+        document.getElementById("deadline-year").value = item?.compliance_year || currentComplianceDate().year;
+        document.getElementById("deadline-year").disabled = Boolean(editingScheduleId);
+        document.getElementById("deadline-date").value = local.slice(0, 10);
+        document.getElementById("deadline-time").value = local.slice(11, 19) || "23:59:59";
+        document.getElementById("deadline-start-date").value = start.slice(0,10);
+        document.getElementById("deadline-start-time").value = start.slice(11,19) || "00:00:00";
+        document.getElementById("deadline-grace").value = item?.grace_period_hours ?? 48;
+        // Removing the visibility control must not reopen a previously closed period.
+        editingIsOpen = item?.is_open ?? true;
+        document.getElementById("form-error").style.display = "none";
+        document.getElementById("deadline-modal").style.display = "flex";
+      }
+      async function save() {
+        const errorBox = document.getElementById("form-error"), button = document.getElementById("save-btn");
+        const title = document.getElementById("deadline-name").value.trim();
+        const period_label = editingScheduleId ? editingPeriodLabel : document.getElementById("deadline-level").value;
+        const compliance_year = Number(document.getElementById("deadline-year").value);
+        const dateValue = document.getElementById("deadline-date").value, timeValue = document.getElementById("deadline-time").value;
+        const grace_period_hours = Number(document.getElementById("deadline-grace").value);
+        const startDate = document.getElementById("deadline-start-date").value, startTime = document.getElementById("deadline-start-time").value;
+        const starts = new Date(`${startDate}T${startTime}+08:00`);
+        const deadline = new Date(`${dateValue}T${timeValue}+08:00`);
+        if (!title || !period_label || !Number.isInteger(compliance_year) || !dateValue || !timeValue || Number.isNaN(deadline.getTime()) || !Number.isInteger(grace_period_hours) || grace_period_hours < 0) {
+          errorBox.textContent = "Complete all deadline details.";
+          errorBox.style.display = "block";
+          return;
+        }
+        button.disabled = true;
+        try {
+          if (!startDate || !startTime || Number.isNaN(starts.getTime()) || starts > deadline) throw new Error("Choose a start date and time on or before the end deadline.");
+          const payload = { title, period_label, compliance_year, starts_at: starts.toISOString(), deadline_at: deadline.toISOString(), grace_period_hours, is_open: editingIsOpen };
+          if (!editingId) payload.created_by = profile.id;
+          const request = editingScheduleId ? supabaseClient.rpc("update_recurring_compliance_deadline", {p_period_id: editingId, p_starts_at: payload.starts_at, p_deadline_at: payload.deadline_at, p_grace_period_hours: grace_period_hours}) : editingId ? supabaseClient.from("compliance_periods").update(payload).eq("id", editingId) : supabaseClient.from("compliance_periods").insert(payload);
+          const { error } = await (editingScheduleId ? request : request.select("id").single());
+          if (error) throw error;
+          const savedId = editingId;
+          closeForm();
+          showToast("Compliance deadline saved.");
+          await load({ preserveView: true, focusId: savedId });
+        } catch (error) {
+          errorBox.textContent = error.message;
+          errorBox.style.display = "block";
+        } finally {
+          button.disabled = false;
+        }
+      }
+      init();
+    </script>
+  </body>
+</html>
+

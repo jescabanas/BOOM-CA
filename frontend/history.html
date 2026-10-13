@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en" data-theme-scope="system">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>History — Barangay Compliance System</title>
+    <link rel="stylesheet" href="css/styles.css?v=20261006-file-actions" />
+    <script src="js/theme.js?v=20261003-internal-theme"></script>
+    <script src="js/period-filter.js?v=20261008-admin-deadlines"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8/dist/umd/supabase.js"></script>
+  <script src="js/password-toggle.js?v=20261005" defer></script></head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <img src="assets/images/DILG-Logo-new.png" alt="DILG Seal" class="brand-seal" />
+          <div class="brand-text">
+            <div class="name">Barangay<br>Compliance<br>System</div>
+          </div>
+        </div>
+        <nav id="sidebar-nav"></nav>
+        <div class="theme-toggle-mount" id="theme-toggle-mount"></div>
+        <div class="sidebar-footer">
+          <a href="#" onclick="logout()" style="color: inherit">Sign out</a>
+        </div>
+      </aside>
+      <main class="main">
+        <div class="topbar">
+          <div class="page-title">
+            <div class="eyebrow" id="page-eyebrow">History</div>
+            <h1 style="margin: 0" id="page-heading">Submission History</h1>
+          </div>
+          <div class="user-chip" id="user-chip"></div>
+        </div>
+
+        <div class="history-filter-toolbar">
+          <div class="period-filter-row" id="history-period-filter" style="margin-bottom:0;"></div>
+          <div id="history-search-wrap"><input id="history-search" type="search" placeholder="Search barangay" aria-label="Search barangay" /></div>
+        </div>
+
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Barangay</th>
+              <th>Compliance period</th>
+              <th>Deadline</th>
+              <th>Submitted</th>
+              <th>Review status</th>
+              <th>Submission status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="history-body">
+            <tr>
+              <td colspan="7" style="text-align: center; padding: 30px">
+                Loading…
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </main>
+    </div>
+
+    <div
+      id="history-modal"
+      role="dialog" aria-modal="true" aria-label="Submission details"
+      style="
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(11, 31, 58, 0.5);
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
+        overflow: auto;
+        padding: 24px;
+      "
+    >
+      <div class="card review-modal-card">
+        <div class="review-modal-heading">
+          <h3 style="margin-top: 0">Submission Details</h3>
+          <button class="btn btn-outline dialog-close" id="close-history-modal" aria-label="Close submission details">
+            ×
+          </button>
+        </div>
+        <div id="history-notes" style="margin-bottom: 14px; font-size: 13.5px"></div>
+        <div id="history-docs" style="margin-bottom: 14px; font-size: 13.5px"></div>
+        <div id="history-remarks" style="font-size: 13.5px"></div>
+      </div>
+    </div>
+
+    <script src="env.js"></script>
+    <script src="js/supabaseClient.js?v=20260806-authfix"></script>
+    <script src="js/mfa-config.js?v=20261003-totp"></script><script src="js/mfa-service.js?v=20261003-totp"></script><script src="js/mfa-session.js?v=20261003-totp"></script><script src="js/protected-files.js?v=20261003-totp"></script><script src="js/auth.js?v=20261003-totp"></script>
+    <script src="js/layout.js?v=20261007-barangay-analytics"></script>
+    <script src="js/document-preview.js?v=20261003-totp"></script>
+    <script>
+      let currentProfile, historyPeriod = { month: "", year: "" }, historyCache = [];
+      const historyFilters = new URLSearchParams(location.search);
+      const esc = (v) =>
+        String(v ?? "").replace(
+          /[&<>'"]/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              "'": "&#39;",
+              '"': "&quot;",
+            })[c],
+        );
+      const date = (v) =>
+        v
+          ? new Date(v).toLocaleString("en-PH", {
+              dateStyle: "medium",
+              timeStyle: "short",
+            })
+          : "—";
+      function reviewStatus(s) {
+        if (s.status === "approved") return ["success", "Approved"];
+        if (s.status === "rejected") return ["danger", "Rejected"];
+        if (s.status === "correction_requested") return ["warning", "Needs revision"];
+        return ["warning", "Pending review"];
+      }
+      function submissionStatus(s) {
+        if (s.score_band === "on_time") return ["success", "Advanced"];
+        if (s.score_band === "grace_period") return ["warning", "On time"];
+        if (s.score_band === "late") return ["danger", "Late"];
+        return ["neutral", "Not submitted"];
+      }
+
+      async function init() {
+        currentProfile = await guardPage([
+          "super_admin",
+          "barangay_secretary",
+        ]);
+        if (!currentProfile) return;
+        renderSidebar("history.html", currentProfile.role);
+        initThemeToggle("theme-toggle-mount");
+
+        const isStaff = ["super_admin"].includes(currentProfile.role);
+        document.getElementById("page-eyebrow").textContent = isStaff
+          ? "All Barangays"
+          : currentProfile.barangays?.name || "Barangay not assigned";
+        document.getElementById("page-heading").textContent = isStaff
+          ? "Full Compliance History"
+          : "My Submission History";
+        if (!isStaff) {
+          document.getElementById("history-search-wrap").remove();
+          document.querySelector("#history-body").closest("table").querySelector("thead tr").innerHTML =
+            "<th>Compliance period</th><th>Deadline</th><th>Submitted</th><th>Review status</th><th>Submission status</th><th>Action</th>";
+        }
+
+        const {data:periods,error:periodError} = await supabaseClient.from("compliance_periods").select(ANALYTICS_PERIOD_FIELDS).order("deadline_at",{ascending:false});
+        if(periodError) showToast(periodError.message);
+        historyPeriod = {mode:historyFilters.get("period") ? "periodical" : "monthly",value:historyFilters.get("period") || historyFilters.get("month") || String(currentComplianceDate().month)};
+        historyPeriod = renderAnalyticsPeriodFilter(document.getElementById("history-period-filter"), {
+          years: defaultPeriodYears(), periods:periods || [],
+          mode:historyPeriod.mode, value:historyPeriod.value,
+          onChange: selection => { historyPeriod = selection; renderHistoryRows(); }
+        });
+        document.getElementById("history-search")?.addEventListener("input", renderHistoryRows);
+
+        await loadHistory(isStaff);
+      }
+
+      async function loadHistory(isStaff) {
+        let query = supabaseClient
+          .from("submissions")
+          .select(
+            "*, barangays(name), compliance_periods(title,period_label,compliance_year,deadline_at,starts_at,occurrence_key), profiles!submissions_evaluator_id_fkey(full_name)",
+          )
+          .not("compliance_period_id", "is", null)
+          .order("last_submitted_at", { ascending: false, nullsFirst: false });
+        if (!isStaff) query = query.eq("barangay_id", currentProfile.barangay_id);
+
+        if (historyFilters.get("status")) query = query.eq("status", historyFilters.get("status"));
+        if (historyFilters.get("band")) query = query.eq("score_band", historyFilters.get("band"));
+        const { data, error } = await query;
+        if (error) {
+          showToast(error.message);
+          return;
+        }
+        historyCache = data || [];
+        renderHistoryRows(isStaff);
+      }
+
+      function renderHistoryRows(isStaff) {
+        isStaff = isStaff ?? ["super_admin"].includes(currentProfile.role);
+        const body = document.getElementById("history-body");
+        const search = document.getElementById("history-search")?.value.trim().toLowerCase() || "";
+        const rows = historyCache.filter((s) =>
+          Boolean(s.submitted_at) &&
+          (historyPeriod.mode === "periodical" ? s.compliance_period_id === historyPeriod.value : matchesComplianceAnalyticsPeriod(s.compliance_periods, historyPeriod)) &&
+          (!search || String(s.barangays?.name || "").toLowerCase().includes(search)),
+        );
+        body.innerHTML =
+          rows
+            .map((s) => {
+              const [reviewClass, reviewLabel] = reviewStatus(s),
+                [submissionClass, submissionLabel] = submissionStatus(s),
+                p = s.compliance_periods || {};
+              const barangayCell = isStaff
+                ? `<td style="font-weight:600;">${esc(s.barangays?.name)}</td>`
+                : "";
+              return `<tr>${barangayCell}<td>${esc(p.title)}<div style="font-size:12px;color:var(--color-ink-400);">${esc(p.period_label)} ${p.compliance_year || ""}</div></td><td>${date(p.deadline_at)}</td><td>${date(s.last_submitted_at || s.submitted_at)}</td><td><span class="pill ${reviewClass}">${reviewLabel}</span></td><td><span class="pill ${submissionClass}">${submissionLabel}</span></td><td><button class="btn btn-outline btn-small" onclick="openHistoryItem('${s.id}')">View</button></td></tr>`;
+            })
+            .join("") ||
+          `<tr><td colspan="${isStaff ? 7 : 6}" style="text-align:center;padding:30px;">No submissions found for this period.</td></tr>`;
+      }
+
+      async function openHistoryItem(id) {
+        // Restore reusable modal sections after a previous View action.
+        const modal = document.getElementById("history-modal");
+        const closeButton = document.getElementById("close-history-modal");
+        ["history-notes", "history-docs", "history-remarks"].forEach((elementId) => {
+          const element = document.getElementById(elementId);
+          if (element.parentElement !== modal.firstElementChild) closeButton.parentElement.after(element);
+        });
+        const [{ data: submission }, { data: docs }, { data: remarks }] = await Promise.all([
+          supabaseClient
+            .from("submissions")
+            .select("submission_notes,last_submitted_at,submitted_at")
+            .eq("id", id)
+            .single(),
+          supabaseClient
+            .from("documents")
+            .select(
+              "id,file_name,storage_path,uploaded_at,document_mandates(mandates(title))",
+            )
+            .eq("submission_id", id)
+            .eq("is_current", true)
+            .order("uploaded_at", { ascending: false }),
+          supabaseClient
+            .from("submission_remarks")
+            .select(
+              "remark,created_at,profiles!submission_remarks_author_id_fkey(full_name),documents(file_name),mandates(title)",
+            )
+            .eq("submission_id", id)
+            .order("created_at", { ascending: false }),
+        ]);
+        document.getElementById("history-notes").innerHTML =
+          `<div style="padding:10px 12px;background:var(--color-paper);border:1px solid var(--color-line);border-radius:6px;"><strong style="font-size:12.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--color-ink-400);">Secretary's remarks / notes</strong><div style="margin-top:4px;">${submission?.submission_notes ? esc(submission.submission_notes) : "<em>No notes provided.</em>"}</div></div>`;
+        const links = await Promise.all(
+          (docs || []).map(async (d) => {
+            const cats =
+              (d.document_mandates || []).map((x) => esc(x.mandates?.title)).join(", ") ||
+              "No category";
+            return `<article class="mov-file-card"><div class="mov-file-card-main"><strong>${esc(d.file_name)}</strong><div class="mov-file-meta">${cats}</div></div><div class="mov-file-actions"><button class="btn btn-outline btn-small" type="button" onclick="openProtectedDocument(decodeURIComponent('${encodeURIComponent(d.storage_path).replace(/'/g, '%27')}'), decodeURIComponent('${encodeURIComponent(d.file_name).replace(/'/g, '%27')}'))">Preview</button><div class="mov-file-time">${date(d.uploaded_at)}</div></div></article>`;
+          }),
+        );
+        document.getElementById("history-docs").innerHTML =
+          `<h4 style="margin-bottom:5px;">MOV files</h4><div class="mov-file-list">${links.join("") || "<div class=\"empty-review-state\">No MOV files attached.</div>"}</div>`;
+        document.getElementById("history-remarks").innerHTML = (remarks || []).length
+          ? `<h4 style="margin-bottom:5px;">Review history</h4>${remarks
+              .map(
+                (r) =>
+                  `<div style="padding:7px 0;border-bottom:1px solid var(--color-line);"><strong>${esc(r.profiles?.full_name || "Reviewer")}</strong> · ${date(r.created_at)}<br>${esc(r.remark)}${r.documents?.file_name ? `<div style="color:var(--color-ink-600);">MOV: ${esc(r.documents.file_name)}</div>` : ""}${r.mandates?.title ? `<div style="color:var(--color-ink-600);">Category: ${esc(r.mandates.title)}</div>` : ""}</div>`,
+              )
+              .join("")}`
+          : "";
+        // Keep notes, MOV files, and review history together for this submission.
+        const detailBox = document.createElement("section");
+        detailBox.className = "submission-detail-box history-detail-box";
+        ["history-notes", "history-docs", "history-remarks"].forEach((elementId) => {
+          detailBox.appendChild(document.getElementById(elementId));
+        });
+        document.getElementById("close-history-modal").parentElement.after(detailBox);
+        document.getElementById("history-modal").style.display = "flex";
+      }
+      document
+        .getElementById("close-history-modal")
+        .addEventListener(
+          "click",
+          () => (document.getElementById("history-modal").style.display = "none"),
+        );
+
+      init();
+    </script>
+  </body>
+</html>
+
