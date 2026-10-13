@@ -147,7 +147,8 @@
       }
       async function save() {
         const errorBox = document.getElementById("form-error"), button = document.getElementById("save-btn");
-        const title = document.getElementById("deadline-name").value.trim();
+        //const title = document.getElementById("deadline-name").value.trim();
+        const title = document.getElementById("deadline-name").value;
         const period_label = editingScheduleId ? editingPeriodLabel : document.getElementById("deadline-level").value;
         const compliance_year = Number(document.getElementById("deadline-year").value);
         const dateValue = document.getElementById("deadline-date").value, timeValue = document.getElementById("deadline-time").value;
