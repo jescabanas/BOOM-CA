@@ -130,7 +130,7 @@
         const start = localValue(item?.starts_at);
         document.getElementById("form-title").textContent = id ? `Edit ${item.period_label} deadline` : "New Compliance Deadline";
         document.getElementById("deadline-name").value = item?.title || "Barangay Compliance";
-        document.getElementById("deadline-name").disabled = Boolean(editingScheduleId);
+        //document.getElementById("deadline-name").disabled = Boolean(editingScheduleId);
         document.getElementById("deadline-level").value = item ? complianceFrequency(item, scheduleById) : "Weekly";
         document.getElementById("deadline-level").disabled = Boolean(editingScheduleId);
         document.getElementById("deadline-year").value = item?.compliance_year || currentComplianceDate().year;
