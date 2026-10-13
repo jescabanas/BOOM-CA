@@ -166,7 +166,7 @@
           if (!startDate || !startTime || Number.isNaN(starts.getTime()) || starts > deadline) throw new Error("Choose a start date and time on or before the end deadline.");
           const payload = { title, period_label, compliance_year, starts_at: starts.toISOString(), deadline_at: deadline.toISOString(), grace_period_hours, is_open: editingIsOpen };
           if (!editingId) payload.created_by = profile.id;
-          const request = editingScheduleId ? supabaseClient.rpc("update_recurring_compliance_deadline", {p_period_id: editingId, p_starts_at: payload.starts_at, p_deadline_at: payload.deadline_at, p_grace_period_hours: grace_period_hours}) : editingId ? supabaseClient.from("compliance_periods").update(payload).eq("id", editingId) : supabaseClient.from("compliance_periods").insert(payload);
+          const request = editingScheduleId ? supabaseClient.rpc("update_recurring_compliance_deadline", {p_period_id: editingId, p_title: payload.title, p_starts_at: payload.starts_at, p_deadline_at: payload.deadline_at, p_grace_period_hours: grace_period_hours}) : editingId ? supabaseClient.from("compliance_periods").update(payload).eq("id", editingId) : supabaseClient.from("compliance_periods").insert(payload);
           const { error } = await (editingScheduleId ? request : request.select("id").single());
           if (error) throw error;
           const savedId = editingId;
